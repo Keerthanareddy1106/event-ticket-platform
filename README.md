@@ -104,10 +104,6 @@ The frontend runs on http://localhost:5173
 
 ---
 
-## Author
-
-Keerthana Reddy
-GitHub: https://github.com/Keerthanareddy1106
 
 ---
 
