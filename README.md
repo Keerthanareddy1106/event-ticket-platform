@@ -104,6 +104,4 @@ The frontend runs on http://localhost:5173
 
 ---
 
-## License
 
-This project is intended for educational and portfolio purposes.
