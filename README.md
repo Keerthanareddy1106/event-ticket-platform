@@ -1,60 +1,77 @@
-﻿# Event Ticket Platform
+# Event Ticket Platform
 
-A full-stack event ticketing application. Organizers can create and publish events, attendees can browse events and purchase tickets, and staff can validate ticket QR codes at the venue.
+Event Ticket Platform is a full-stack application for publishing events, selling tickets, and validating venue entry with QR codes.
 
-## Features
+## What it does
 
-- Keycloak authentication with role-based access for organizers, attendees, and staff
-- Event creation, editing, publishing, and deletion
-- Public event browsing with pagination and search
-- Ticket purchasing and paginated ticket history
-- QR code generation and ticket validation
+- **Attendees** browse published events, purchase tickets, view ticket details, and retrieve QR codes.
+- **Organizers** create, update, publish, and manage events and ticket types.
+- **Staff** scan and validate ticket QR codes at the venue.
+- **Authentication** is handled by Keycloak using OpenID Connect and JWT-based API security.
 
-## Technology
+## Technology stack
 
-- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui
-- **Backend:** Java 21, Spring Boot 3.4.4, Spring Security OAuth2 Resource Server, Spring Data JPA
-- **Data and services:** PostgreSQL, Keycloak, Adminer, Docker Compose
+| Layer | Technologies |
+| --- | --- |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui |
+| Backend | Java 21, Spring Boot 3.4.4, Spring Security, Spring Data JPA |
+| Database | PostgreSQL |
+| Identity | Keycloak, OAuth2/OIDC, JWT |
+| Development services | Docker Compose, Adminer |
 
-## Prerequisites
+## Repository layout
 
-- Java 21+
-- Node.js 18+
+```text
+event-ticket-platform/
+├── backend/        Spring Boot REST API and persistence layer
+└── frontend/       React application and Vite configuration
+```
+
+## Requirements
+
+- Java 21 or newer
+- Node.js 18 or newer
 - Docker Desktop
-- Maven (or use the Maven wrapper included in `backend`)
+- Git
 
-## Local setup
+Maven is not required globally because the backend includes Maven Wrapper scripts.
 
-From the repository root:
+## Run locally
 
-### 1. Start PostgreSQL, Keycloak, and Adminer
+### 1. Start supporting services
+
+Open a terminal in the repository root:
 
 ```bash
 cd backend
 docker compose up -d
 ```
 
-The development services are available at:
+This starts:
 
-| Service | URL |
+| Service | Address |
 | --- | --- |
 | PostgreSQL | `localhost:5432` |
 | Keycloak | `http://localhost:9090` |
 | Adminer | `http://localhost:8888` |
 
-The Docker Compose file uses `admin`/`admin` for the Keycloak development administrator.
+The development Keycloak administrator is `admin` / `admin`.
 
 ### 2. Configure Keycloak
 
-1. Open `http://localhost:9090` and sign in as the development administrator.
-2. Create or select the `event-ticket-platform` realm.
-3. Create a public client named `event-ticket-platform-app`.
-4. Set the client redirect URI to `http://localhost:5173/callback`.
-5. Set the post-logout redirect URI and web origin to `http://localhost:5173`.
-6. Create users and assign the application roles required by each workflow.
+In Keycloak at `http://localhost:9090`:
 
-The frontend and backend both expect the realm issuer at:
-`http://localhost:9090/realms/event-ticket-platform`.
+1. Create or select the `event-ticket-platform` realm.
+2. Create a public client named `event-ticket-platform-app`.
+3. Set the valid redirect URI to `http://localhost:5173/callback`.
+4. Set the web origin to `http://localhost:5173`.
+5. Create users and assign the roles needed for the attendee, organizer, or staff workflows.
+
+The application expects the issuer URL:
+
+```text
+http://localhost:9090/realms/event-ticket-platform
+```
 
 ### 3. Start the backend
 
@@ -65,11 +82,11 @@ cd backend
 .\mvnw.cmd spring-boot:run
 ```
 
-The API runs at `http://localhost:8080`.
+The API is available at `http://localhost:8080`.
 
 ### 4. Start the frontend
 
-In a second terminal, from the repository root:
+Open a second terminal:
 
 ```bash
 cd frontend
@@ -77,46 +94,49 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. Vite proxies `/api` requests to the backend.
+Open `http://localhost:5173`. The Vite development server proxies `/api` requests to the backend.
 
-For local UI development without the Spring Boot API, the frontend also includes a JSON Server script:
+## Frontend commands
+
+Run these commands from `frontend`:
 
 ```bash
-cd frontend
+npm run dev       # Start the development server
+npm run build     # Type-check and create a production build
+npm run lint      # Run ESLint
+npm run format    # Format the frontend source
+npm run preview   # Preview a production build
+```
+
+The optional mock data server can be started with:
+
+```bash
 npm run mocks
 ```
 
-The mock data is served from `frontend/db.json` at `http://localhost:3000`.
+It serves `frontend/db.json` on `http://localhost:3000`.
 
-## Project structure
+## API routes
 
-```text
-backend/    Spring Boot API, persistence, security, and QR code services
-frontend/   React application and Vite configuration
-```
+The backend uses the `/api/v1` prefix.
 
-## API overview
-
-All API routes use the `/api/v1` prefix.
-
-| Method | Endpoint | Access |
+| Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/v1/published-events` | Public |
-| `GET` | `/api/v1/published-events/{eventId}` | Public |
-| `GET` | `/api/v1/events` | Organizer |
-| `POST` | `/api/v1/events` | Organizer |
-| `PUT` | `/api/v1/events/{eventId}` | Authenticated |
-| `DELETE` | `/api/v1/events/{eventId}` | Authenticated |
-| `POST` | `/api/v1/events/{eventId}/ticket-types/{ticketTypeId}/tickets` | Authenticated |
-| `GET` | `/api/v1/tickets` | Authenticated |
-| `GET` | `/api/v1/tickets/{ticketId}` | Authenticated |
-| `GET` | `/api/v1/tickets/{ticketId}/qr-codes` | Authenticated |
-| `POST` | `/api/v1/ticket-validations` | Staff |
+| `GET` | `/api/v1/published-events` | List published events |
+| `GET` | `/api/v1/published-events/{eventId}` | View a published event |
+| `POST` | `/api/v1/events` | Create an event |
+| `GET` | `/api/v1/events` | List organizer events |
+| `GET` | `/api/v1/events/{eventId}` | View an organizer event |
+| `PUT` | `/api/v1/events/{eventId}` | Update an event |
+| `DELETE` | `/api/v1/events/{eventId}` | Delete an event |
+| `POST` | `/api/v1/events/{eventId}/ticket-types/{ticketTypeId}/tickets` | Purchase a ticket |
+| `GET` | `/api/v1/tickets` | List the current user's tickets |
+| `GET` | `/api/v1/tickets/{ticketId}` | View a ticket |
+| `GET` | `/api/v1/tickets/{ticketId}/qr-codes` | Download a ticket QR code |
+| `POST` | `/api/v1/ticket-validations` | Validate a ticket |
 
-## Development notes
+Published-event `GET` routes are public. The remaining routes require an authenticated user and role-based access where configured.
 
-- The backend uses PostgreSQL with Hibernate schema updates enabled for local development.
-- The Docker Compose credentials are development defaults and must be replaced before any production deployment.
-- Run frontend checks with `npm run lint` and `npm run build`.
+## Development configuration
 
-
+The local backend connects to PostgreSQL on `localhost:5432`, uses UTC for persistence, and enables Hibernate schema updates for development. Docker Compose values are intended for local development only and should be replaced before deployment.
