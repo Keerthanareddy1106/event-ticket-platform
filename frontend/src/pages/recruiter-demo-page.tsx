@@ -123,8 +123,7 @@ const RecruiterDemoPage: React.FC = () => {
             Explore the Event Ticket Platform
           </h1>
           <p className="text-gray-400 text-base md:text-lg">
-            Experience how role-based access control works across different user
-            roles.
+            Experience the platform through three different user roles.
           </p>
         </div>
 

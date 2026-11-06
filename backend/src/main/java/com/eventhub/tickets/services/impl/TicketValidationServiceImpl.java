@@ -35,7 +35,8 @@ public class TicketValidationServiceImpl implements TicketValidationService {
             )
         ));
 
-    Ticket ticket = qrCode.getTicket();
+    Ticket ticket = ticketRepository.findByIdWithLock(qrCode.getTicket().getId())
+        .orElseThrow(TicketNotFoundException::new);
 
     return validateTicket(ticket, TicketValidationMethod.QR_SCAN);
   }
@@ -66,7 +67,7 @@ public class TicketValidationServiceImpl implements TicketValidationService {
 
   @Override
   public TicketValidation validateTicketManually(UUID ticketId) {
-    Ticket ticket = ticketRepository.findById(ticketId)
+    Ticket ticket = ticketRepository.findByIdWithLock(ticketId)
         .orElseThrow(TicketNotFoundException::new);
     return validateTicket(ticket, TicketValidationMethod.MANUAL);
   }

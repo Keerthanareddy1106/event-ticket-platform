@@ -208,4 +208,16 @@ class RbacAndQrIntegrationTests {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("INVALID"));
   }
+
+  @Test
+  void invalidOrNonExistentQrCodeIsRejected() throws Exception {
+    Jwt organizerJwt = buildKeycloakJwt(ORGANIZER_ID, "demo_organizer", "ORGANIZER");
+
+    mockMvc.perform(post("/api/v1/ticket-validations")
+            .with(jwt().jwt(organizerJwt).authorities(jwtAuthenticationConverter.convert(organizerJwt).getAuthorities()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"id\":\"" + UUID.randomUUID() + "\",\"method\":\"QR_SCAN\"}"))
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.error").value("QR code not found"));
+  }
 }
