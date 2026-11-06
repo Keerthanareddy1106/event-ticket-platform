@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "react-oidc-context";
 import { jwtDecode } from "jwt-decode";
+import { useAppAuth } from "@/context/demo-auth-context";
 
 interface UseRolesReturn {
   isLoading: boolean;
@@ -17,7 +17,7 @@ interface JwtPayload {
 }
 
 export const useRoles = (): UseRolesReturn => {
-  const { isLoading: isAuthLoading, user } = useAuth();
+  const { isLoading: isAuthLoading, user } = useAppAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [roles, setRoles] = useState<string[]>([]);
   const [isOrganizer, setIsOrganizer] = useState(false);

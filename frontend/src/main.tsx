@@ -16,6 +16,7 @@ import DashboardListTickets from "./pages/dashboard-list-tickets.tsx";
 import DashboardPage from "./pages/dashboard-page.tsx";
 import DashboardViewTicketPage from "./pages/dashboard-view-ticket-page.tsx";
 import DashboardValidateQrPage from "./pages/dashboard-validate-qr-page.tsx";
+import { DemoAuthProvider } from "./context/demo-auth-context.tsx";
 
 const router = createBrowserRouter([
   {
@@ -105,15 +106,22 @@ const router = createBrowserRouter([
 ]);
 
 const oidcConfig = {
-  authority: "http://localhost:9090/realms/event-ticket-platform",
-  client_id: "event-ticket-platform-app",
-  redirect_uri: "http://localhost:5173/callback",
+  authority:
+    import.meta.env.VITE_OIDC_AUTHORITY ||
+    "http://localhost:9090/realms/event-ticket-platform",
+  client_id:
+    import.meta.env.VITE_OIDC_CLIENT_ID || "event-ticket-platform-app",
+  redirect_uri:
+    import.meta.env.VITE_OIDC_REDIRECT_URI ||
+    `${window.location.origin}/callback`,
 };
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AuthProvider {...oidcConfig}>
-      <RouterProvider router={router} />
+      <DemoAuthProvider>
+        <RouterProvider router={router} />
+      </DemoAuthProvider>
     </AuthProvider>
   </StrictMode>,
 );

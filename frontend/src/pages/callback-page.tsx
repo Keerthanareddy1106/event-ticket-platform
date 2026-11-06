@@ -1,9 +1,9 @@
 import { useEffect } from "react";
-import { useAuth } from "react-oidc-context";
+import { useAppAuth } from "@/context/demo-auth-context";
 import { useNavigate } from "react-router";
 
 const CallbackPage: React.FC = () => {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated } = useAppAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -16,7 +16,7 @@ const CallbackPage: React.FC = () => {
         localStorage.removeItem("redirectPath");
         navigate(redirectPath);
       } else {
-        navigate("/dashboard"); // ← this was missing!
+        navigate("/dashboard");
       }
     }
   }, [isLoading, isAuthenticated, navigate]);

@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { useAuth } from "react-oidc-context";
+import { useAppAuth } from "@/context/demo-auth-context";
 import { Navigate, useLocation } from "react-router";
 
 interface ProtectedRouteProperties {
@@ -7,11 +7,15 @@ interface ProtectedRouteProperties {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProperties> = ({ children }) => {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated } = useAppAuth();
   const location = useLocation();
 
   if (isLoading) {
-    return <p>Loading...</p>;
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <p className="text-gray-400 animate-pulse">Loading...</p>
+      </div>
+    );
   }
 
   if (!isAuthenticated) {

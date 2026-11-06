@@ -1,19 +1,33 @@
 import { useEffect } from "react";
-import { useAuth } from "react-oidc-context";
+import { useAppAuth } from "@/context/demo-auth-context";
+import { useNavigate } from "react-router";
 
 const LoginPage: React.FC = () => {
-  const { isLoading, isAuthenticated, signinRedirect } = useAuth();
+  const { isLoading, isAuthenticated, signinRedirect } = useAppAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (isLoading) {
       return;
     }
-    if (!isAuthenticated) {
-      signinRedirect();
+    if (isAuthenticated) {
+      const redirectPath = localStorage.getItem("redirectPath");
+      if (redirectPath) {
+        localStorage.removeItem("redirectPath");
+        navigate(redirectPath, { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
+      return;
     }
-  }, [isLoading, isAuthenticated, signinRedirect]);
+    signinRedirect();
+  }, [isLoading, isAuthenticated, signinRedirect, navigate]);
 
-  return <div>Redirecting to login...</div>;
+  return (
+    <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <p className="text-gray-400">Redirecting to login...</p>
+    </div>
+  );
 };
 
 export default LoginPage;

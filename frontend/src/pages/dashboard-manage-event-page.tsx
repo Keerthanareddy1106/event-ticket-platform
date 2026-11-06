@@ -1,4 +1,4 @@
-﻿import NavBar from "@/components/nav-bar";
+import NavBar from "@/components/nav-bar";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useAppAuth } from "@/context/demo-auth-context";
 import {
   CreateEventRequest,
   CreateTicketTypeRequest,
@@ -47,7 +48,6 @@ import {
   Trash,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAuth } from "react-oidc-context";
 import { useNavigate, useParams } from "react-router";
 
 interface DateTimeSelectProperties {
@@ -76,15 +76,18 @@ const DateTimeSelect: React.FC<DateTimeSelectProperties> = ({
           {/* Date */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button className="bg-gray-900 border-gray-700 border">
+              <Button
+                type="button"
+                className="bg-gray-900 border-gray-700 border"
+              >
                 <CalendarIcon />
-                {date ? format(date, "PPP") : <span>Pick a Date</span>}
+                {date ? format(new Date(date), "PPP") : <span>Pick a Date</span>}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
               <Calendar
                 mode="single"
-                selected={date}
+                selected={date ? new Date(date) : undefined}
                 onSelect={(selectedDate) => {
                   if (!selectedDate) {
                     return;
@@ -108,7 +111,7 @@ const DateTimeSelect: React.FC<DateTimeSelectProperties> = ({
             <Input
               type="time"
               className="w-[90px] bg-gray-900 text-white border-gray-700 border [&::-webkit-calendar-picker-indicator]:invert"
-              value={time}
+              value={time || ""}
               onChange={(e) => setTime(e.target.value)}
             />
           </div>
@@ -148,7 +151,7 @@ interface EventData {
 }
 
 const DashboardManageEventPage: React.FC = () => {
-  const { isLoading, user } = useAuth();
+  const { isLoading, user } = useAppAuth();
   const { id } = useParams();
   const isEditMode = !!id;
   const navigate = useNavigate();
@@ -188,26 +191,28 @@ const DashboardManageEventPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isEditMode && !isLoading && user?.access_token) {
+    if (isEditMode && !isLoading && user?.access_token && id) {
       const fetchEvent = async () => {
         const event: EventDetails = await getEvent(user.access_token, id);
         setEventData({
           id: event.id,
           name: event.name,
-          startDate: event.start,
+          startDate: event.start ? new Date(event.start) : undefined,
           startTime: event.start
             ? formatTimeFromDate(new Date(event.start))
             : undefined,
-          endDate: event.end,
+          endDate: event.end ? new Date(event.end) : undefined,
           endTime: event.end
             ? formatTimeFromDate(new Date(event.end))
             : undefined,
           venueDetails: event.venue,
-          salesStartDate: event.salesStart,
+          salesStartDate: event.salesStart
+            ? new Date(event.salesStart)
+            : undefined,
           salesStartTime: event.salesStart
             ? formatTimeFromDate(new Date(event.salesStart))
             : undefined,
-          salesEndDate: event.salesEnd,
+          salesEndDate: event.salesEnd ? new Date(event.salesEnd) : undefined,
           salesEndTime: event.salesEnd
             ? formatTimeFromDate(new Date(event.salesEnd))
             : undefined,
@@ -219,15 +224,15 @@ const DashboardManageEventPage: React.FC = () => {
             price: ticket.price,
             totalAvailable: ticket.totalAvailable,
           })),
-          createdAt: event.createdAt,
-          updatedAt: event.updatedAt,
+          createdAt: event.createdAt ? new Date(event.createdAt) : undefined,
+          updatedAt: event.updatedAt ? new Date(event.updatedAt) : undefined,
         });
         setEventDateEnabled(!!(event.start || event.end));
         setEventSalesDateEnabled(!!(event.salesStart || event.salesEnd));
       };
       fetchEvent();
     }
-  }, [id, user]);
+  }, [id, user?.access_token, isLoading, isEditMode]);
 
   const formatTimeFromDate = (date: Date): string => {
     const hours = date.getHours().toString().padStart(2, "0");
@@ -446,17 +451,19 @@ const DashboardManageEventPage: React.FC = () => {
               )}
               {eventData.createdAt && (
                 <p className="text-sm text-gray-400">
-                  Created At: {format(eventData.createdAt, "PPP")}
+                  Created At: {format(new Date(eventData.createdAt), "PPP")}
                 </p>
               )}
               {eventData.updatedAt && (
                 <p className="text-sm text-gray-400">
-                  Updated At: {format(eventData.updatedAt, "PPP")}
+                  Updated At: {format(new Date(eventData.updatedAt), "PPP")}
                 </p>
               )}
             </>
           ) : (
-            <p>Fill out the form below to create your event</p>
+            <p className="text-gray-400 text-sm">
+              Fill out the form below to create your event
+            </p>
           )}
         </div>
 
@@ -576,7 +583,7 @@ const DashboardManageEventPage: React.FC = () => {
                     <Button
                       type="button"
                       onClick={() => handleAddTicketType()}
-                      className="bg-gray-800 border-gray-700 text-white"
+                      className="bg-gray-800 border-gray-700 text-white cursor-pointer"
                     >
                       <Plus /> Add Ticket Type
                     </Button>
@@ -586,7 +593,10 @@ const DashboardManageEventPage: React.FC = () => {
                 <CardContent className="space-y-2">
                   {eventData.ticketTypes.map((ticketType) => {
                     return (
-                      <div className="bg-gray-700 w-full p-4 rounded-lg border-gray-600">
+                      <div
+                        key={ticketType.id}
+                        className="bg-gray-700 w-full p-4 rounded-lg border-gray-600"
+                      >
                         <div className="flex justify-between items-center">
                           {/* Left */}
                           <div>
@@ -601,7 +611,7 @@ const DashboardManageEventPage: React.FC = () => {
                                 ${ticketType.price}
                               </Badge>
                             </div>
-                            {ticketType.totalAvailable && (
+                            {ticketType.totalAvailable !== undefined && (
                               <p className="text-gray-400">
                                 {ticketType.totalAvailable} tickets available
                               </p>
@@ -646,7 +656,7 @@ const DashboardManageEventPage: React.FC = () => {
                     <Input
                       id="ticket-type-name"
                       className="bg-gray-800 border-gray-700"
-                      value={currentTicketType?.name}
+                      value={currentTicketType?.name || ""}
                       onChange={(e) =>
                         setCurrentTicketType(
                           currentTicketType
@@ -665,13 +675,13 @@ const DashboardManageEventPage: React.FC = () => {
                       <Input
                         id="ticket-type-price"
                         type="number"
-                        value={currentTicketType?.price}
+                        value={currentTicketType?.price ?? 0}
                         onChange={(e) =>
                           setCurrentTicketType(
                             currentTicketType
                               ? {
                                   ...currentTicketType,
-                                  price: Number.parseFloat(e.target.value),
+                                  price: Number.parseFloat(e.target.value) || 0,
                                 }
                               : undefined,
                           )
@@ -688,15 +698,14 @@ const DashboardManageEventPage: React.FC = () => {
                       <Input
                         id="ticket-type-total-available"
                         type="number"
-                        value={currentTicketType?.totalAvailable}
+                        value={currentTicketType?.totalAvailable ?? 0}
                         onChange={(e) =>
                           setCurrentTicketType(
                             currentTicketType
                               ? {
                                   ...currentTicketType,
-                                  totalAvailable: Number.parseFloat(
-                                    e.target.value,
-                                  ),
+                                  totalAvailable:
+                                    Number.parseFloat(e.target.value) || 0,
                                 }
                               : undefined,
                           )
@@ -712,7 +721,7 @@ const DashboardManageEventPage: React.FC = () => {
                     <Textarea
                       id="ticket-type-description"
                       className="bg-gray-800 border-gray-700"
-                      value={currentTicketType?.description}
+                      value={currentTicketType?.description || ""}
                       onChange={(e) =>
                         setCurrentTicketType(
                           currentTicketType
@@ -727,7 +736,8 @@ const DashboardManageEventPage: React.FC = () => {
                   </div>
                   <DialogFooter>
                     <Button
-                      className="bg-white text-black hover:bg-gray-300"
+                      type="button"
+                      className="bg-white text-black hover:bg-gray-300 cursor-pointer"
                       onClick={handleSaveTicketType}
                     >
                       Save
@@ -769,20 +779,17 @@ const DashboardManageEventPage: React.FC = () => {
           )}
 
           <div>
-            <Button onClick={handleFormSubmit}>
-              {isEditMode ? "Update" : "Submit"}
+            <Button
+              type="submit"
+              className="bg-purple-600 hover:bg-purple-500 cursor-pointer"
+            >
+              {isEditMode ? "Update Event" : "Create Event"}
             </Button>
           </div>
         </form>
-        {/* For Development Only */}
-        {/* <p className="mt-8 font-mono text-white">{JSON.stringify(eventData)}</p> */}
       </div>
     </div>
   );
 };
 
 export default DashboardManageEventPage;
-
-
-
-

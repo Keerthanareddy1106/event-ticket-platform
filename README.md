@@ -1,46 +1,56 @@
 # Event Ticket Platform
 
-Event Ticket Platform is a full-stack application for publishing events, selling tickets, and validating venue entry with QR codes.
+Event Ticket Platform is a full-stack application for publishing events, selling multi-tier tickets, and validating venue entry with QR codes.
 
-## What it does
+## Key Features
 
-- **Attendees** browse published events, purchase tickets, view ticket details, and retrieve QR codes.
-- **Organizers** create, update, publish, and manage events and ticket types.
-- **Staff** scan and validate ticket QR codes at the venue.
-- **Authentication** is handled by Keycloak using OpenID Connect and JWT-based API security.
+- **Interactive Recruiter Demo Mode & One-Click Role Switcher**: Instantly switch between **All Roles (Recruiter)**, **Attendee**, **Organizer**, and **Gate Staff (QR)** directly from the top bar—works standalone on Vercel without requiring an external Keycloak or Spring Boot server, while seamlessly connecting to them when configured via environment variables.
+- **Attendees**: Browse and search published events with quick category filters, save favorites, purchase tickets through a streamlined checkout, and retrieve scannable SVG QR passes.
+- **Organizers**: View real-time KPI analytics (total events, tickets sold, gross revenue, remaining capacity) and create, update, publish, and manage events and ticket tiers.
+- **Venue Staff**: Scan and validate ticket QR codes at the gate via camera or test-validate existing/invalid tickets with one click.
+- **Hybrid Architecture**: Supports Keycloak OAuth2/OIDC + Spring Boot 3.4 REST API in full-stack mode and automatic persistent client-side fallback for zero-setup cloud demos on Vercel.
 
-## Technology stack
+## Technology Stack
 
 | Layer | Technologies |
 | --- | --- |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui |
-| Backend | Java 21, Spring Boot 3.4.4, Spring Security, Spring Data JPA |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Lucide Icons |
+| Backend | Java 21, Spring Boot 3.4.4, Spring Security, Spring Data JPA, ZXing QR |
 | Database | PostgreSQL |
-| Identity | Keycloak, OAuth2/OIDC, JWT |
-| Development services | Docker Compose, Adminer |
+| Identity | Keycloak (OAuth2/OIDC, JWT) + Interactive Demo JWT Provider |
+| Deployment | Vercel (SPA rewrites + hybrid serverless/demo store), Docker Compose |
 
-## Repository layout
+## Repository Layout
 
 ```text
 event-ticket-platform/
 ├── backend/        Spring Boot REST API and persistence layer
-└── frontend/       React application and Vite configuration
+├── frontend/       React 19 application, Demo Store, and Vite configuration
+└── vercel.json     Root Vercel build & SPA rewrite configuration
 ```
 
-## Requirements
+## Deploy to Vercel
 
-- Java 21 or newer
-- Node.js 18 or newer
-- Docker Desktop
-- Git
+You can deploy this repository directly to Vercel in two ways:
 
-Maven is not required globally because the backend includes Maven Wrapper scripts.
+### Option A: Deploy via Vercel CLI
+From the `frontend` directory (or repository root):
+```bash
+cd frontend
+npx vercel --prod
+```
 
-## Run locally
+### Option B: Connect GitHub Repository to Vercel
+1. Import the repository in the Vercel Dashboard.
+2. Set the **Root Directory** to `event-ticket-platform/frontend` (or `event-ticket-platform`, which uses the root `vercel.json`).
+3. Click **Deploy**. Both [`frontend/.npmrc`](frontend/.npmrc) (`legacy-peer-deps=true`) and [`frontend/vercel.json`](frontend/vercel.json) (SPA route rewrites) are pre-configured.
+4. *(Optional)* To connect to a hosted Spring Boot backend and Keycloak server, set `VITE_DEMO_MODE=false`, `VITE_API_BASE_URL`, `VITE_OIDC_AUTHORITY`, `VITE_OIDC_CLIENT_ID`, and `VITE_OIDC_REDIRECT_URI` in Vercel Project Environment Variables (see [`frontend/.env.example`](frontend/.env.example)).
+
+## Run Locally (Full-Stack Mode)
 
 ### 1. Start supporting services
 
-Open a terminal in the repository root:
+Open a terminal in `backend`:
 
 ```bash
 cd backend
@@ -55,27 +65,7 @@ This starts:
 | Keycloak | `http://localhost:9090` |
 | Adminer | `http://localhost:8888` |
 
-The development Keycloak administrator is `admin` / `admin`.
-
-### 2. Configure Keycloak
-
-In Keycloak at `http://localhost:9090`:
-
-1. Create or select the `event-ticket-platform` realm.
-2. Create a public client named `event-ticket-platform-app`.
-3. Set the valid redirect URI to `http://localhost:5173/callback`.
-4. Set the web origin to `http://localhost:5173`.
-5. Create users and assign the roles needed for the attendee, organizer, or staff workflows.
-
-The application expects the issuer URL:
-
-```text
-http://localhost:9090/realms/event-ticket-platform
-```
-
-### 3. Start the backend
-
-From the repository root:
+### 2. Start the backend
 
 ```bash
 cd backend
@@ -84,9 +74,7 @@ cd backend
 
 The API is available at `http://localhost:8080`.
 
-### 4. Start the frontend
-
-Open a second terminal:
+### 3. Start the frontend
 
 ```bash
 cd frontend
@@ -94,49 +82,4 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The Vite development server proxies `/api` requests to the backend.
-
-## Frontend commands
-
-Run these commands from `frontend`:
-
-```bash
-npm run dev       # Start the development server
-npm run build     # Type-check and create a production build
-npm run lint      # Run ESLint
-npm run format    # Format the frontend source
-npm run preview   # Preview a production build
-```
-
-The optional mock data server can be started with:
-
-```bash
-npm run mocks
-```
-
-It serves `frontend/db.json` on `http://localhost:3000`.
-
-## API routes
-
-The backend uses the `/api/v1` prefix.
-
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/published-events` | List published events |
-| `GET` | `/api/v1/published-events/{eventId}` | View a published event |
-| `POST` | `/api/v1/events` | Create an event |
-| `GET` | `/api/v1/events` | List organizer events |
-| `GET` | `/api/v1/events/{eventId}` | View an organizer event |
-| `PUT` | `/api/v1/events/{eventId}` | Update an event |
-| `DELETE` | `/api/v1/events/{eventId}` | Delete an event |
-| `POST` | `/api/v1/events/{eventId}/ticket-types/{ticketTypeId}/tickets` | Purchase a ticket |
-| `GET` | `/api/v1/tickets` | List the current user's tickets |
-| `GET` | `/api/v1/tickets/{ticketId}` | View a ticket |
-| `GET` | `/api/v1/tickets/{ticketId}/qr-codes` | Download a ticket QR code |
-| `POST` | `/api/v1/ticket-validations` | Validate a ticket |
-
-Published-event `GET` routes are public. The remaining routes require an authenticated user and role-based access where configured.
-
-## Development configuration
-
-The local backend connects to PostgreSQL on `localhost:5432`, uses UTC for persistence, and enables Hibernate schema updates for development. Docker Compose values are intended for local development only and should be replaced before deployment.
+Open `http://localhost:5173`.
