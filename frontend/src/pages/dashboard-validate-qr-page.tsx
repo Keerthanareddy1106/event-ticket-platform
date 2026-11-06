@@ -8,7 +8,7 @@ import {
   TicketValidationStatus,
 } from "@/domain/domain";
 import { validateTicket } from "@/lib/api";
-import { getDemoTicketsRaw } from "@/lib/demo-store";
+import { getDemoTicketsRaw, StoredTicket } from "@/lib/demo-store";
 import { Scanner } from "@yudiel/react-qr-scanner";
 import {
   AlertCircle,
@@ -31,8 +31,9 @@ const DashboardValidateQrPage: React.FC = () => {
   const [validationStatus, setValidationStatus] = useState<
     TicketValidationStatus | undefined
   >();
-
-  const sampleTickets = getDemoTicketsRaw();
+  const [sampleTickets, setSampleTickets] = useState<StoredTicket[]>(() =>
+    getDemoTicketsRaw(),
+  );
 
   useEffect(() => {
     const presetTicketId = searchParams.get("ticketId");
@@ -48,6 +49,7 @@ const DashboardValidateQrPage: React.FC = () => {
     setData("");
     setError(undefined);
     setValidationStatus(undefined);
+    setSampleTickets(getDemoTicketsRaw());
   };
 
   const handleError = (err: unknown) => {
@@ -71,6 +73,7 @@ const DashboardValidateQrPage: React.FC = () => {
         method,
       });
       setValidationStatus(response.status);
+      setSampleTickets(getDemoTicketsRaw());
     } catch (err) {
       handleError(err);
     }
@@ -92,11 +95,11 @@ const DashboardValidateQrPage: React.FC = () => {
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold flex items-center justify-center gap-2">
             <QrCode className="w-6 h-6 text-purple-400" />
-            Venue Gate QR Validator
+            Organizer Ticket QR Validator
           </h1>
           <p className="text-sm text-gray-400 mt-1">
             Scan attendee QR codes with your camera or validate Ticket IDs
-            manually
+            manually. Single-use redemption is strictly enforced.
           </p>
         </div>
 
@@ -104,7 +107,7 @@ const DashboardValidateQrPage: React.FC = () => {
           {error && (
             <Alert variant="destructive" className="bg-gray-950 border-red-700">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Scanner Notice</AlertTitle>
+              <AlertTitle>Validation Notice</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
@@ -121,25 +124,26 @@ const DashboardValidateQrPage: React.FC = () => {
                 }
               }}
               onError={() => {
-                // Camera may not be granted in headless/desktop preview; manual & 1-click demo buttons work seamlessly
+                // Camera optional in desktop browser
               }}
             />
 
             {validationStatus && (
-              <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center">
+              <div className="absolute inset-0 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center">
                 {validationStatus === TicketValidationStatus.VALID ? (
                   <>
                     <div className="bg-green-500 rounded-full p-4 mb-3 shadow-lg shadow-green-500/40">
                       <Check className="w-14 h-14 text-white" />
                     </div>
                     <h3 className="text-xl font-bold text-green-400">
-                      VALID TICKET
+                      VALID TICKET — REDEEMED
                     </h3>
                     <p className="text-xs text-gray-300 font-mono mt-1">
                       {data}
                     </p>
                     <p className="text-xs text-green-200 mt-1">
-                      Attendee cleared for venue entry
+                      Ticket verified and marked as redeemed. Scanning again
+                      will reject duplicate entry.
                     </p>
                   </>
                 ) : (
@@ -154,7 +158,8 @@ const DashboardValidateQrPage: React.FC = () => {
                       {data}
                     </p>
                     <p className="text-xs text-red-200 mt-1">
-                      Entry denied — ticket ID not recognized or cancelled
+                      Entry denied — ticket has already been redeemed or ID is
+                      unrecognized.
                     </p>
                   </>
                 )}
@@ -193,11 +198,11 @@ const DashboardValidateQrPage: React.FC = () => {
             </div>
           )}
 
-          {/* One-Click Recruiter Demo Ticket Tester */}
+          {/* Sample Ticket Verification Helper */}
           <div className="border-t border-gray-800 pt-4 space-y-2.5">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300">
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-              <span>One-Click Demo Ticket Simulation (No Camera Needed):</span>
+              <span>Test Attendee Tickets (Click twice to test duplicate prevention):</span>
             </div>
             <div className="flex flex-wrap gap-2">
               {sampleTickets.map((t) => (
@@ -209,10 +214,16 @@ const DashboardValidateQrPage: React.FC = () => {
                     setData(t.id);
                     handleValidate(t.id, TicketValidationMethod.MANUAL);
                   }}
-                  className="text-xs px-2.5 py-1.5 rounded-lg bg-green-950/60 hover:bg-green-900/70 border border-green-500/40 text-green-200 font-mono flex items-center gap-1.5 cursor-pointer transition"
+                  className={`text-xs px-2.5 py-1.5 rounded-lg border font-mono flex items-center gap-1.5 cursor-pointer transition ${
+                    t.redeemed
+                      ? "bg-amber-950/60 hover:bg-amber-900/70 border-amber-500/40 text-amber-200"
+                      : "bg-green-950/60 hover:bg-green-900/70 border-green-500/40 text-green-200"
+                  }`}
                 >
-                  <Ticket className="w-3.5 h-3.5 text-green-400" />
-                  <span>{t.id} (Valid)</span>
+                  <Ticket className="w-3.5 h-3.5" />
+                  <span>
+                    {t.id} ({t.redeemed ? "Already Redeemed" : "Unredeemed"})
+                  </span>
                 </button>
               ))}
               <button
@@ -237,7 +248,7 @@ const DashboardValidateQrPage: React.FC = () => {
             onClick={handleReset}
           >
             <RotateCcw className="w-4 h-4 mr-2" />
-            Reset Scanner
+            Reset Scanner Display
           </Button>
         </div>
       </div>

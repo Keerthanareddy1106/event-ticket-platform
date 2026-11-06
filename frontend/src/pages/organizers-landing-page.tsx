@@ -1,11 +1,13 @@
 import NavBar from "@/components/nav-bar";
 import { Button } from "@/components/ui/button";
 import { useAppAuth } from "@/context/demo-auth-context";
-import { BarChart3, CalendarPlus, QrCode, ShieldCheck } from "lucide-react";
+import { useRoles } from "@/hooks/use-roles";
+import { BarChart3, CalendarPlus, KeyRound, QrCode, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router";
 
 const OrganizersLandingPage: React.FC = () => {
-  const { isLoading, setDemoPreset } = useAppAuth();
+  const { isLoading, isAuthenticated } = useAppAuth();
+  const { isOrganizer, isAdmin } = useRoles();
   const navigate = useNavigate();
 
   if (isLoading) {
@@ -33,16 +35,23 @@ const OrganizersLandingPage: React.FC = () => {
               venue with QR codes.
             </p>
             <div className="flex flex-wrap gap-4">
-              <Button
-                className="bg-purple-600 hover:bg-purple-500 h-11 px-6 cursor-pointer"
-                onClick={() => {
-                  setDemoPreset("ORGANIZER");
-                  navigate("/dashboard/events");
-                }}
-              >
-                <CalendarPlus className="w-4 h-4 mr-2" />
-                Open Organizer Dashboard
-              </Button>
+              {isAuthenticated && (isOrganizer || isAdmin) ? (
+                <Button
+                  className="bg-purple-600 hover:bg-purple-500 h-11 px-6 cursor-pointer"
+                  onClick={() => navigate("/dashboard/events")}
+                >
+                  <CalendarPlus className="w-4 h-4 mr-2" />
+                  Open Organizer Dashboard
+                </Button>
+              ) : (
+                <Button
+                  className="bg-purple-600 hover:bg-purple-500 h-11 px-6 cursor-pointer"
+                  onClick={() => navigate("/demo")}
+                >
+                  <KeyRound className="w-4 h-4 mr-2" />
+                  Authenticate as Organizer
+                </Button>
+              )}
               <Button
                 variant="outline"
                 className="border-gray-700 bg-gray-900 hover:bg-gray-800 text-white h-11 px-6 cursor-pointer"

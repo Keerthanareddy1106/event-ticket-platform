@@ -46,15 +46,22 @@ public class TicketValidationServiceImpl implements TicketValidationService {
     ticketValidation.setTicket(ticket);
     ticketValidation.setValidationMethod(ticketValidationMethod);
 
-    TicketValidationStatusEnum ticketValidationStatus = ticket.getValidations().stream()
-        .filter(v -> TicketValidationStatusEnum.VALID.equals(v.getStatus()))
-        .findFirst()
-        .map(v -> TicketValidationStatusEnum.INVALID)
-        .orElse(TicketValidationStatusEnum.VALID);
+    boolean alreadyRedeemed = ticketValidationRepository.existsByTicketIdAndStatus(
+        ticket.getId(), TicketValidationStatusEnum.VALID
+    ) || (ticket.getValidations() != null && ticket.getValidations().stream()
+        .anyMatch(v -> TicketValidationStatusEnum.VALID.equals(v.getStatus())));
+
+    TicketValidationStatusEnum ticketValidationStatus = alreadyRedeemed
+        ? TicketValidationStatusEnum.INVALID
+        : TicketValidationStatusEnum.VALID;
 
     ticketValidation.setStatus(ticketValidationStatus);
 
-    return ticketValidationRepository.save(ticketValidation);
+    TicketValidation saved = ticketValidationRepository.saveAndFlush(ticketValidation);
+    if (ticket.getValidations() != null) {
+      ticket.getValidations().add(saved);
+    }
+    return saved;
   }
 
   @Override
@@ -64,4 +71,3 @@ public class TicketValidationServiceImpl implements TicketValidationService {
     return validateTicket(ticket, TicketValidationMethod.MANUAL);
   }
 }
-

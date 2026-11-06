@@ -16,15 +16,27 @@ import { demoApi } from "@/lib/demo-store";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
-function shouldUseDemoApi(accessToken?: string): boolean {
-  if (accessToken && accessToken.endsWith(".demo_signature")) {
-    return true;
-  }
-  const demoEnabled = localStorage.getItem("etp_demo_mode_enabled");
-  if (demoEnabled === "true") {
-    return true;
-  }
-  // If no explicit backend URL is provided and not running on localhost, use demo store
+export interface AdminOverviewStats {
+  totalEvents: number;
+  publishedEvents: number;
+  totalUsers: number;
+  totalTicketsIssued: number;
+  totalQrValidations: number;
+}
+
+export interface AdminPlatformUser {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+  organizedEventsCount: number;
+}
+
+function isIsolatedDemoJwt(accessToken?: string): boolean {
+  return Boolean(accessToken && accessToken.endsWith(".demo_signature"));
+}
+
+function shouldUseStandalonePublicFallback(): boolean {
   if (
     !import.meta.env.VITE_API_BASE_URL &&
     typeof window !== "undefined" &&
@@ -36,35 +48,101 @@ function shouldUseDemoApi(accessToken?: string): boolean {
   return false;
 }
 
-export const createEvent = async (
-  accessToken: string,
-  request: CreateEventRequest,
-): Promise<void> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.createEvent(request);
+async function handleNonOkResponse(response: Response): Promise<never> {
+  if (response.status === 401) {
+    throw new Error("HTTP 401 Unauthorized: Authentication required");
   }
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/events`, {
-      method: "POST",
+  if (response.status === 403) {
+    throw new Error(
+      "HTTP 403 Forbidden: Your role is not authorized for this operation",
+    );
+  }
+  const responseBody = await response.json().catch(() => null);
+  if (isErrorResponse(responseBody)) {
+    throw new Error(responseBody.error);
+  }
+  throw new Error(`Request failed with status ${response.status}`);
+}
+
+export const getAdminOverview = async (
+  accessToken: string,
+): Promise<AdminOverviewStats> => {
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.getAdminOverview(accessToken);
+  }
+  const response = await fetch(`${API_BASE}/api/v1/admin/overview`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!response.ok) {
+    return handleNonOkResponse(response);
+  }
+  return (await response.json()) as AdminOverviewStats;
+};
+
+export const listAdminUsers = async (
+  accessToken: string,
+): Promise<AdminPlatformUser[]> => {
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.listAdminUsers(accessToken);
+  }
+  const response = await fetch(`${API_BASE}/api/v1/admin/users`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!response.ok) {
+    return handleNonOkResponse(response);
+  }
+  return (await response.json()) as AdminPlatformUser[];
+};
+
+export const listAdminEvents = async (
+  accessToken: string,
+  page: number,
+): Promise<SpringBootPagination<EventSummary>> => {
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.listEvents(accessToken, page, 6);
+  }
+  const response = await fetch(
+    `${API_BASE}/api/v1/admin/events?page=${page}&size=6`,
+    {
+      method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(request),
-    });
+    },
+  );
+  if (!response.ok) {
+    return handleNonOkResponse(response);
+  }
+  return (await response.json()) as SpringBootPagination<EventSummary>;
+};
 
-    const responseBody = await response.json();
+export const createEvent = async (
+  accessToken: string,
+  request: CreateEventRequest,
+): Promise<void> => {
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.createEvent(accessToken, request);
+  }
+  const response = await fetch(`${API_BASE}/api/v1/events`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
 
-    if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-  } catch {
-    return demoApi.createEvent(request);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
 };
 
@@ -73,31 +151,20 @@ export const updateEvent = async (
   id: string,
   request: UpdateEventRequest,
 ): Promise<void> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.updateEvent(id, request);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.updateEvent(accessToken, id, request);
   }
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/events/${id}`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(request),
-    });
+  const response = await fetch(`${API_BASE}/api/v1/events/${id}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
 
-    const responseBody = await response.json();
-
-    if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-  } catch {
-    return demoApi.updateEvent(id, request);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
 };
 
@@ -105,105 +172,73 @@ export const listEvents = async (
   accessToken: string,
   page: number,
 ): Promise<SpringBootPagination<EventSummary>> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.listEvents(page, 4);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.listEvents(accessToken, page, 4);
   }
-  try {
-    const response = await fetch(
-      `${API_BASE}/api/v1/events?page=${page}&size=4`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+  const response = await fetch(
+    `${API_BASE}/api/v1/events?page=${page}&size=4`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
-    );
+    },
+  );
 
-    const responseBody = await response.json();
-
-    if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-
-    return responseBody as SpringBootPagination<EventSummary>;
-  } catch {
-    return demoApi.listEvents(page, 4);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
+
+  return (await response.json()) as SpringBootPagination<EventSummary>;
 };
 
 export const getEvent = async (
   accessToken: string,
   id: string,
 ): Promise<EventDetails> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.getEvent(id);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.getEvent(accessToken, id);
   }
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/events/${id}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
+  const response = await fetch(`${API_BASE}/api/v1/events/${id}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
 
-    const responseBody = await response.json();
-
-    if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-
-    return responseBody as EventDetails;
-  } catch {
-    return demoApi.getEvent(id);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
+
+  return (await response.json()) as EventDetails;
 };
 
 export const deleteEvent = async (
   accessToken: string,
   id: string,
 ): Promise<void> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.deleteEvent(id);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.deleteEvent(accessToken, id);
   }
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/events/${id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
+  const response = await fetch(`${API_BASE}/api/v1/events/${id}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
 
-    if (!response.ok) {
-      const responseBody = await response.json();
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-  } catch {
-    return demoApi.deleteEvent(id);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
 };
 
 export const listPublishedEvents = async (
   page: number,
 ): Promise<SpringBootPagination<PublishedEventSummary>> => {
-  if (shouldUseDemoApi()) {
+  if (shouldUseStandalonePublicFallback()) {
     return demoApi.listPublishedEvents(page, 4);
   }
   try {
@@ -217,18 +252,11 @@ export const listPublishedEvents = async (
       },
     );
 
-    const responseBody = await response.json();
-
     if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
+      return handleNonOkResponse(response);
     }
 
-    return responseBody as SpringBootPagination<PublishedEventSummary>;
+    return (await response.json()) as SpringBootPagination<PublishedEventSummary>;
   } catch {
     return demoApi.listPublishedEvents(page, 4);
   }
@@ -238,7 +266,7 @@ export const searchPublishedEvents = async (
   query: string,
   page: number,
 ): Promise<SpringBootPagination<PublishedEventSummary>> => {
-  if (shouldUseDemoApi()) {
+  if (shouldUseStandalonePublicFallback()) {
     return demoApi.searchPublishedEvents(query, page, 4);
   }
   try {
@@ -252,18 +280,11 @@ export const searchPublishedEvents = async (
       },
     );
 
-    const responseBody = await response.json();
-
     if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
+      return handleNonOkResponse(response);
     }
 
-    return responseBody as SpringBootPagination<PublishedEventSummary>;
+    return (await response.json()) as SpringBootPagination<PublishedEventSummary>;
   } catch {
     return demoApi.searchPublishedEvents(query, page, 4);
   }
@@ -272,7 +293,7 @@ export const searchPublishedEvents = async (
 export const getPublishedEvent = async (
   id: string,
 ): Promise<PublishedEventDetails> => {
-  if (shouldUseDemoApi()) {
+  if (shouldUseStandalonePublicFallback()) {
     return demoApi.getPublishedEvent(id);
   }
   try {
@@ -283,18 +304,11 @@ export const getPublishedEvent = async (
       },
     });
 
-    const responseBody = await response.json();
-
     if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
+      return handleNonOkResponse(response);
     }
 
-    return responseBody as PublishedEventDetails;
+    return (await response.json()) as PublishedEventDetails;
   } catch {
     return demoApi.getPublishedEvent(id);
   }
@@ -305,33 +319,23 @@ export const purchaseTicket = async (
   eventId: string,
   ticketTypeId: string,
 ): Promise<void> => {
-  if (shouldUseDemoApi(accessToken)) {
-    await demoApi.purchaseTicket(eventId, ticketTypeId);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    await demoApi.purchaseTicket(accessToken, eventId, ticketTypeId);
     return;
   }
-  try {
-    const response = await fetch(
-      `${API_BASE}/api/v1/events/${eventId}/ticket-types/${ticketTypeId}/tickets`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+  const response = await fetch(
+    `${API_BASE}/api/v1/events/${eventId}/ticket-types/${ticketTypeId}/tickets`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
-    );
+    },
+  );
 
-    if (!response.ok) {
-      const responseBody = await response.json();
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-  } catch {
-    await demoApi.purchaseTicket(eventId, ticketTypeId);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
 };
 
@@ -339,126 +343,88 @@ export const listTickets = async (
   accessToken: string,
   page: number,
 ): Promise<SpringBootPagination<TicketSummary>> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.listTickets(page, 8);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.listTickets(accessToken, page, 8);
   }
-  try {
-    const response = await fetch(
-      `${API_BASE}/api/v1/tickets?page=${page}&size=8`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+  const response = await fetch(
+    `${API_BASE}/api/v1/tickets?page=${page}&size=8`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
-    );
+    },
+  );
 
-    const responseBody = await response.json();
-
-    if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-
-    return responseBody as SpringBootPagination<TicketSummary>;
-  } catch {
-    return demoApi.listTickets(page, 8);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
+
+  return (await response.json()) as SpringBootPagination<TicketSummary>;
 };
 
 export const getTicket = async (
   accessToken: string,
   id: string,
 ): Promise<TicketDetails> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.getTicket(id);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.getTicket(accessToken, id);
   }
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/tickets/${id}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
+  const response = await fetch(`${API_BASE}/api/v1/tickets/${id}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
 
-    const responseBody = await response.json();
-
-    if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-
-    return responseBody as TicketDetails;
-  } catch {
-    return demoApi.getTicket(id);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
+
+  return (await response.json()) as TicketDetails;
 };
 
 export const getTicketQr = async (
   accessToken: string,
   id: string,
 ): Promise<Blob> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.getTicketQr(id);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.getTicketQr(accessToken, id);
   }
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/tickets/${id}/qr-codes`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+  const response = await fetch(`${API_BASE}/api/v1/tickets/${id}/qr-codes`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
 
-    if (response.ok) {
-      return await response.blob();
-    } else {
-      return demoApi.getTicketQr(id);
-    }
-  } catch {
-    return demoApi.getTicketQr(id);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
+  return await response.blob();
 };
 
 export const validateTicket = async (
   accessToken: string,
   request: TicketValidationRequest,
 ): Promise<TicketValidationResponse> => {
-  if (shouldUseDemoApi(accessToken)) {
-    return demoApi.validateTicket(request);
+  if (isIsolatedDemoJwt(accessToken) || shouldUseStandalonePublicFallback()) {
+    return demoApi.validateTicket(accessToken, request);
   }
-  try {
-    const response = await fetch(`${API_BASE}/api/v1/ticket-validations`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(request),
-    });
+  const response = await fetch(`${API_BASE}/api/v1/ticket-validations`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
 
-    const responseBody = await response.json();
-
-    if (!response.ok) {
-      if (isErrorResponse(responseBody)) {
-        throw new Error(responseBody.error);
-      } else {
-        console.error(JSON.stringify(responseBody));
-        throw new Error("An unknown error occurred");
-      }
-    }
-
-    return responseBody as TicketValidationResponse;
-  } catch {
-    return demoApi.validateTicket(request);
+  if (!response.ok) {
+    return handleNonOkResponse(response);
   }
+
+  return (await response.json()) as TicketValidationResponse;
 };

@@ -16,12 +16,18 @@ import DashboardListTickets from "./pages/dashboard-list-tickets.tsx";
 import DashboardPage from "./pages/dashboard-page.tsx";
 import DashboardViewTicketPage from "./pages/dashboard-view-ticket-page.tsx";
 import DashboardValidateQrPage from "./pages/dashboard-validate-qr-page.tsx";
+import RecruiterDemoPage from "./pages/recruiter-demo-page.tsx";
+import DashboardAdminPage from "./pages/dashboard-admin-page.tsx";
 import { DemoAuthProvider } from "./context/demo-auth-context.tsx";
 
 const router = createBrowserRouter([
   {
     path: "/",
     Component: AttendeeLandingPage,
+  },
+  {
+    path: "/demo",
+    Component: RecruiterDemoPage,
   },
   {
     path: "/callback",
@@ -38,7 +44,7 @@ const router = createBrowserRouter([
   {
     path: "/events/:eventId/purchase/:ticketTypeId",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute allowedRoles={["ATTENDEE"]}>
         <PurchaseTicketPage />
       </ProtectedRoute>
     ),
@@ -56,9 +62,17 @@ const router = createBrowserRouter([
     ),
   },
   {
+    path: "/dashboard/admin",
+    element: (
+      <ProtectedRoute allowedRoles={["ADMIN"]}>
+        <DashboardAdminPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: "/dashboard/events",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute allowedRoles={["ORGANIZER", "ADMIN"]}>
         <DashboardListEventsPage />
       </ProtectedRoute>
     ),
@@ -66,7 +80,7 @@ const router = createBrowserRouter([
   {
     path: "/dashboard/tickets",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute allowedRoles={["ATTENDEE"]}>
         <DashboardListTickets />
       </ProtectedRoute>
     ),
@@ -74,7 +88,7 @@ const router = createBrowserRouter([
   {
     path: "/dashboard/tickets/:id",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute allowedRoles={["ATTENDEE"]}>
         <DashboardViewTicketPage />
       </ProtectedRoute>
     ),
@@ -82,7 +96,7 @@ const router = createBrowserRouter([
   {
     path: "/dashboard/validate-qr",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute allowedRoles={["ORGANIZER", "STAFF", "ADMIN"]}>
         <DashboardValidateQrPage />
       </ProtectedRoute>
     ),
@@ -90,7 +104,7 @@ const router = createBrowserRouter([
   {
     path: "/dashboard/events/create",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute allowedRoles={["ORGANIZER", "ADMIN"]}>
         <DashboardManageEventPage />
       </ProtectedRoute>
     ),
@@ -98,7 +112,7 @@ const router = createBrowserRouter([
   {
     path: "/dashboard/events/update/:id",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute allowedRoles={["ORGANIZER", "ADMIN"]}>
         <DashboardManageEventPage />
       </ProtectedRoute>
     ),

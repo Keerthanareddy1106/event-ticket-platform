@@ -1,5 +1,4 @@
 import NavBar from "@/components/nav-bar";
-import { Button } from "@/components/ui/button";
 import { useAppAuth } from "@/context/demo-auth-context";
 import { TicketDetails, TicketStatus } from "@/domain/domain";
 import { getTicket, getTicketQr } from "@/lib/api";
@@ -11,11 +10,10 @@ import {
   Copy,
   DollarSign,
   MapPin,
-  QrCode,
   Tag,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useParams } from "react-router";
 
 const DashboardViewTicketPage: React.FC = () => {
   const [ticket, setTicket] = useState<TicketDetails | undefined>();
@@ -26,7 +24,6 @@ const DashboardViewTicketPage: React.FC = () => {
 
   const { id } = useParams();
   const { isLoading, user } = useAppAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (isLoading || !user?.access_token || !id) {
@@ -165,7 +162,7 @@ const DashboardViewTicketPage: React.FC = () => {
 
             <div className="text-center mb-6">
               <p className="text-purple-200 text-xs">
-                Present this QR code at the venue gate for instant verification
+                Present this QR code at the venue gate for Organizer validation
               </p>
             </div>
 
@@ -180,7 +177,7 @@ const DashboardViewTicketPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="text-center mb-4">
+            <div className="text-center">
               <h4 className="text-xs uppercase tracking-wider text-purple-300 font-semibold">
                 Ticket Verification ID
               </h4>
@@ -201,20 +198,15 @@ const DashboardViewTicketPage: React.FC = () => {
                   )}
                 </button>
               </div>
+              <p className="text-xs text-purple-200/80 mt-2">
+                Copy this ID and switch to the <strong>Event Organizer</strong>{" "}
+                identity on the{" "}
+                <Link to="/demo" className="underline text-white">
+                  Demo Roles
+                </Link>{" "}
+                page to validate it at the QR scanner.
+              </p>
             </div>
-
-            <Button
-              type="button"
-              onClick={() =>
-                navigate(
-                  `/dashboard/validate-qr?ticketId=${encodeURIComponent(ticket.id)}`,
-                )
-              }
-              className="w-full bg-black/40 hover:bg-black/60 border border-purple-400/40 text-white cursor-pointer"
-            >
-              <QrCode className="w-4 h-4 mr-2" />
-              Test Validate This Ticket at Gate Scanner
-            </Button>
           </div>
         </div>
       </div>

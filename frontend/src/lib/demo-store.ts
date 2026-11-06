@@ -14,9 +14,17 @@ import {
   TicketValidationStatus,
   UpdateEventRequest,
 } from "@/domain/domain";
+import { jwtDecode } from "jwt-decode";
 
-const EVENTS_STORAGE_KEY = "etp_demo_events_v1";
-const TICKETS_STORAGE_KEY = "etp_demo_tickets_v1";
+const EVENTS_STORAGE_KEY = "etp_demo_events_v2";
+const TICKETS_STORAGE_KEY = "etp_demo_tickets_v2";
+
+const PROTECTED_SEED_EVENT_IDS = new Set([
+  "evt-neon-pulse-2026",
+  "evt-ai-cloud-summit-2026",
+  "evt-symphony-stars",
+  "evt-indie-game-expo",
+]);
 
 export interface StoredTicket {
   id: string;
@@ -31,6 +39,41 @@ export interface StoredTicket {
   eventStart: Date;
   eventEnd: Date;
   purchasedAt: Date;
+  redeemed?: boolean;
+  redeemedAt?: Date;
+}
+
+interface JwtClaimPayload {
+  realm_access?: {
+    roles?: string[];
+  };
+}
+
+export function assertJwtAuthorized(
+  accessToken: string | undefined,
+  allowedRoles: ("ADMIN" | "ORGANIZER" | "ATTENDEE" | "STAFF")[],
+): void {
+  if (!accessToken) {
+    throw new Error("HTTP 401 Unauthorized: Missing authentication token");
+  }
+  try {
+    const decoded = jwtDecode<JwtClaimPayload>(accessToken);
+    const rawRoles = decoded.realm_access?.roles || [];
+    const normalized = rawRoles.map((r) =>
+      r.startsWith("ROLE_") ? r.replace(/^ROLE_/, "").toUpperCase() : r.toUpperCase(),
+    );
+    const permitted = allowedRoles.some((req) => normalized.includes(req));
+    if (!permitted) {
+      throw new Error(
+        `HTTP 403 Forbidden: Insufficient privileges. Required role: ${allowedRoles.join(" or ")}`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("HTTP ")) {
+      throw err;
+    }
+    throw new Error("HTTP 401 Unauthorized: Invalid JWT token");
+  }
 }
 
 const INITIAL_EVENTS: EventDetails[] = [
@@ -162,27 +205,6 @@ const INITIAL_EVENTS: EventDetails[] = [
       },
     ],
   },
-  {
-    id: "evt-founders-gala-draft",
-    name: "NextGen Founders & Venture Pitch Night (2027)",
-    start: new Date("2027-02-10T18:00:00.000Z"),
-    end: new Date("2027-02-10T22:00:00.000Z"),
-    venue: "Skyline Loft at Pier 27, New York, NY",
-    salesStart: new Date("2026-12-01T09:00:00.000Z"),
-    salesEnd: new Date("2027-02-09T18:00:00.000Z"),
-    status: EventStatusEnum.DRAFT,
-    createdAt: new Date("2026-10-29T15:00:00.000Z"),
-    updatedAt: new Date("2026-11-01T10:00:00.000Z"),
-    ticketTypes: [
-      {
-        id: "tt-pitch-founder",
-        name: "Founder Admission",
-        price: 75,
-        totalAvailable: 120,
-        description: "Startup pitch showcase and investor networking mixer.",
-      },
-    ],
-  },
 ];
 
 const INITIAL_TICKETS: StoredTicket[] = [
@@ -200,6 +222,7 @@ const INITIAL_TICKETS: StoredTicket[] = [
     eventStart: new Date("2026-12-12T18:00:00.000Z"),
     eventEnd: new Date("2026-12-13T02:00:00.000Z"),
     purchasedAt: new Date("2026-11-01T14:20:00.000Z"),
+    redeemed: false,
   },
   {
     id: "TKT-3190-AICLOUD-PRO",
@@ -215,6 +238,7 @@ const INITIAL_TICKETS: StoredTicket[] = [
     eventStart: new Date("2026-11-20T09:00:00.000Z"),
     eventEnd: new Date("2026-11-21T18:00:00.000Z"),
     purchasedAt: new Date("2026-11-02T09:45:00.000Z"),
+    redeemed: false,
   },
 ];
 
@@ -299,7 +323,54 @@ function paginate<T>(
 }
 
 export const demoApi = {
-  createEvent: async (request: CreateEventRequest): Promise<void> => {
+  getAdminOverview: async (accessToken: string) => {
+    assertJwtAuthorized(accessToken, ["ADMIN"]);
+    const events = loadEvents();
+    const tickets = loadTickets();
+    return {
+      totalEvents: events.length,
+      publishedEvents: events.filter(
+        (e) => e.status === EventStatusEnum.PUBLISHED,
+      ).length,
+      totalUsers: 3,
+      totalTicketsIssued: tickets.length,
+      totalQrValidations: tickets.filter((t) => t.redeemed).length,
+    };
+  },
+
+  listAdminUsers: async (accessToken: string) => {
+    assertJwtAuthorized(accessToken, ["ADMIN"]);
+    const events = loadEvents();
+    return [
+      {
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "demo_admin",
+        email: "demo_admin@eventhub.local",
+        role: "ADMIN",
+        organizedEventsCount: 0,
+      },
+      {
+        id: "22222222-2222-2222-2222-222222222222",
+        name: "demo_organizer",
+        email: "demo_organizer@eventhub.local",
+        role: "ORGANIZER",
+        organizedEventsCount: events.length,
+      },
+      {
+        id: "33333333-3333-3333-3333-333333333333",
+        name: "demo_attendee",
+        email: "demo_attendee@eventhub.local",
+        role: "ATTENDEE",
+        organizedEventsCount: 0,
+      },
+    ];
+  },
+
+  createEvent: async (
+    accessToken: string,
+    request: CreateEventRequest,
+  ): Promise<void> => {
+    assertJwtAuthorized(accessToken, ["ORGANIZER", "ADMIN"]);
     const events = loadEvents();
     const now = new Date();
     const newEvent: EventDetails = {
@@ -325,9 +396,11 @@ export const demoApi = {
   },
 
   updateEvent: async (
+    accessToken: string,
     id: string,
     request: UpdateEventRequest,
   ): Promise<void> => {
+    assertJwtAuthorized(accessToken, ["ORGANIZER", "ADMIN"]);
     const events = loadEvents();
     const idx = events.findIndex((e) => e.id === id);
     if (idx === -1) {
@@ -357,14 +430,17 @@ export const demoApi = {
   },
 
   listEvents: async (
+    accessToken: string,
     page: number,
     size = 4,
   ): Promise<SpringBootPagination<EventSummary>> => {
+    assertJwtAuthorized(accessToken, ["ORGANIZER", "ADMIN"]);
     const events = loadEvents();
     return paginate(events, page, size);
   },
 
-  getEvent: async (id: string): Promise<EventDetails> => {
+  getEvent: async (accessToken: string, id: string): Promise<EventDetails> => {
+    assertJwtAuthorized(accessToken, ["ORGANIZER", "ADMIN"]);
     const events = loadEvents();
     const found = events.find((e) => e.id === id);
     if (!found) {
@@ -373,7 +449,13 @@ export const demoApi = {
     return found;
   },
 
-  deleteEvent: async (id: string): Promise<void> => {
+  deleteEvent: async (accessToken: string, id: string): Promise<void> => {
+    assertJwtAuthorized(accessToken, ["ORGANIZER", "ADMIN"]);
+    if (PROTECTED_SEED_EVENT_IDS.has(id)) {
+      throw new Error(
+        "Protected demo event cannot be deleted in the public demo environment. Create a custom event to test deletion.",
+      );
+    }
     const events = loadEvents();
     saveEvents(events.filter((e) => e.id !== id));
   },
@@ -430,9 +512,11 @@ export const demoApi = {
   },
 
   purchaseTicket: async (
+    accessToken: string,
     eventId: string,
     ticketTypeId: string,
   ): Promise<string> => {
+    assertJwtAuthorized(accessToken, ["ATTENDEE"]);
     const events = loadEvents();
     const event = events.find((e) => e.id === eventId);
     if (!event) {
@@ -443,6 +527,13 @@ export const demoApi = {
       event.ticketTypes[0];
     if (!ticketType) {
       throw new Error("Ticket type not found");
+    }
+
+    if (
+      typeof ticketType.totalAvailable === "number" &&
+      ticketType.totalAvailable <= 0
+    ) {
+      throw new Error("Tickets are sold out for this ticket type");
     }
 
     if (
@@ -472,6 +563,7 @@ export const demoApi = {
       eventStart: event.start || new Date(),
       eventEnd: event.end || new Date(),
       purchasedAt: new Date(),
+      redeemed: false,
     };
 
     const tickets = loadTickets();
@@ -480,9 +572,11 @@ export const demoApi = {
   },
 
   listTickets: async (
+    accessToken: string,
     page: number,
     size = 8,
   ): Promise<SpringBootPagination<TicketSummary>> => {
+    assertJwtAuthorized(accessToken, ["ATTENDEE"]);
     const tickets = loadTickets();
     const summaries: TicketSummary[] = tickets.map((t) => ({
       id: t.id,
@@ -496,7 +590,8 @@ export const demoApi = {
     return paginate(summaries, page, size);
   },
 
-  getTicket: async (id: string): Promise<TicketDetails> => {
+  getTicket: async (accessToken: string, id: string): Promise<TicketDetails> => {
+    assertJwtAuthorized(accessToken, ["ATTENDEE"]);
     const tickets = loadTickets();
     const found = tickets.find((t) => t.id === id);
     if (!found) {
@@ -514,8 +609,8 @@ export const demoApi = {
     };
   },
 
-  getTicketQr: async (id: string): Promise<Blob> => {
-    // Generate a deterministic, high-contrast SVG QR-style matrix representation for the ticket ID
+  getTicketQr: async (accessToken: string, id: string): Promise<Blob> => {
+    assertJwtAuthorized(accessToken, ["ATTENDEE"]);
     const size = 29;
     const cellSize = 8;
     const margin = 16;
@@ -579,20 +674,24 @@ export const demoApi = {
   },
 
   validateTicket: async (
+    accessToken: string,
     request: TicketValidationRequest,
   ): Promise<TicketValidationResponse> => {
+    assertJwtAuthorized(accessToken, ["ORGANIZER", "STAFF", "ADMIN"]);
     const cleanId = request.id.trim();
     const tickets = loadTickets();
-    const found = tickets.find(
+    const idx = tickets.findIndex(
       (t) => t.id.toLowerCase() === cleanId.toLowerCase(),
     );
 
-    if (!found) {
+    if (idx === -1) {
       return {
         ticketId: cleanId,
         status: TicketValidationStatus.INVALID,
       };
     }
+
+    const found = tickets[idx];
 
     if (found.status === TicketStatus.CANCELLED) {
       return {
@@ -600,6 +699,21 @@ export const demoApi = {
         status: TicketValidationStatus.EXPIRED,
       };
     }
+
+    // Prevent duplicate ticket redemption: mirrors TicketValidationServiceImpl on the backend
+    if (found.redeemed) {
+      return {
+        ticketId: found.id,
+        status: TicketValidationStatus.INVALID,
+      };
+    }
+
+    tickets[idx] = {
+      ...found,
+      redeemed: true,
+      redeemedAt: new Date(),
+    };
+    saveTickets(tickets);
 
     return {
       ticketId: found.id,

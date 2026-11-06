@@ -3,11 +3,16 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router";
 
 const DashboardPage: React.FC = () => {
-  const { isLoading, isOrganizer, isStaff } = useRoles();
+  const { isLoading, isAdmin, isOrganizer, isStaff } = useRoles();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (isLoading) {
+      return;
+    }
+
+    if (isAdmin) {
+      navigate("/dashboard/admin", { replace: true });
       return;
     }
 
@@ -22,7 +27,7 @@ const DashboardPage: React.FC = () => {
     }
 
     navigate("/dashboard/tickets", { replace: true });
-  }, [isLoading, isOrganizer, isStaff, navigate]);
+  }, [isLoading, isAdmin, isOrganizer, isStaff, navigate]);
 
   return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center">

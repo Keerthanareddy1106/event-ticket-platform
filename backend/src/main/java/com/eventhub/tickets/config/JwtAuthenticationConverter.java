@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.core.GrantedAuthority;
@@ -15,6 +16,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class JwtAuthenticationConverter implements Converter<Jwt, JwtAuthenticationToken> {
 
+  private static final Set<String> KNOWN_APP_ROLES = Set.of(
+      "ADMIN", "ORGANIZER", "ATTENDEE", "STAFF"
+  );
+
   @Override
   public JwtAuthenticationToken convert(Jwt jwt) {
     Collection<GrantedAuthority> authorities = extractAuthorities(jwt);
@@ -24,17 +29,20 @@ public class JwtAuthenticationConverter implements Converter<Jwt, JwtAuthenticat
   private Collection<GrantedAuthority> extractAuthorities(Jwt jwt) {
     Map<String, Object> realmAccess = jwt.getClaim("realm_access");
 
-    if(null == realmAccess || !realmAccess.containsKey("roles")) {
+    if (null == realmAccess || !realmAccess.containsKey("roles")) {
       return Collections.emptyList();
     }
 
     @SuppressWarnings("unchecked")
-    List<String> roles = (List<String>)realmAccess.get("roles");
+    List<String> roles = (List<String>) realmAccess.get("roles");
 
     return roles.stream()
-        .filter(role -> role.startsWith("ROLE_"))
+        .filter(role -> role != null && (
+            role.startsWith("ROLE_") || KNOWN_APP_ROLES.contains(role.toUpperCase())
+        ))
+        .map(role -> role.startsWith("ROLE_") ? role.toUpperCase() : "ROLE_" + role.toUpperCase())
+        .distinct()
         .map(SimpleGrantedAuthority::new)
         .collect(Collectors.toList());
   }
 }
-

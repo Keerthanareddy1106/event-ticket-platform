@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useAuth as useOidcAuth } from "react-oidc-context";
+import { jwtDecode } from "jwt-decode";
 
-export type DemoRolePreset = "ALL" | "ATTENDEE" | "ORGANIZER" | "STAFF";
+export type DemoIdentityKey = "demo_admin" | "demo_organizer" | "demo_attendee";
 
-interface DemoUserProfile {
+interface UserProfile {
   preferred_username: string;
   email: string;
   name: string;
@@ -11,72 +12,120 @@ interface DemoUserProfile {
 
 interface AppUser {
   access_token: string;
-  profile: DemoUserProfile;
+  profile: UserProfile;
 }
 
-interface DemoAuthContextValue {
-  isDemoMode: boolean;
-  demoPreset: DemoRolePreset;
-  setDemoPreset: (preset: DemoRolePreset) => void;
-  enableDemoMode: (preset?: DemoRolePreset) => void;
-  disableDemoMode: () => void;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  user?: AppUser;
+interface JwtRolePayload {
+  sub?: string;
+  preferred_username?: string;
+  email?: string;
+  name?: string;
+  exp?: number;
+  realm_access?: {
+    roles?: string[];
+  };
+}
+
+interface DemoIdentitySpec {
+  username: DemoIdentityKey;
+  sub: string;
+  email: string;
+  name: string;
   roles: string[];
-  isOrganizer: boolean;
-  isAttendee: boolean;
-  isStaff: boolean;
-  signinRedirect: () => Promise<void>;
-  signoutRedirect: () => Promise<void>;
+  defaultDashboard: string;
 }
 
-const DEMO_MODE_STORAGE_KEY = "etp_demo_mode_enabled";
-const DEMO_PRESET_STORAGE_KEY = "etp_demo_role_preset";
-
-const PRESET_PROFILES: Record<
-  DemoRolePreset,
-  { username: string; email: string; name: string; roles: string[] }
-> = {
-  ALL: {
-    username: "recruiter_demo",
-    email: "recruiter@eventhub.demo",
-    name: "Recruiter Demo (All Roles)",
-    roles: ["ROLE_ORGANIZER", "ROLE_ATTENDEE", "ROLE_STAFF"],
+export const DEMO_IDENTITIES: Record<DemoIdentityKey, DemoIdentitySpec> = {
+  demo_admin: {
+    username: "demo_admin",
+    sub: "11111111-1111-1111-1111-111111111111",
+    email: "demo_admin@eventhub.local",
+    name: "Demo Administrator",
+    roles: ["ADMIN", "ROLE_ADMIN"],
+    defaultDashboard: "/dashboard/admin",
   },
-  ORGANIZER: {
-    username: "alex_organizer",
-    email: "organizer@eventhub.demo",
-    name: "Alex Rivera (Organizer)",
-    roles: ["ROLE_ORGANIZER"],
+  demo_organizer: {
+    username: "demo_organizer",
+    sub: "22222222-2222-2222-2222-222222222222",
+    email: "demo_organizer@eventhub.local",
+    name: "Demo Event Organizer",
+    roles: ["ORGANIZER", "ROLE_ORGANIZER"],
+    defaultDashboard: "/dashboard/events",
   },
-  ATTENDEE: {
-    username: "jamie_attendee",
-    email: "attendee@eventhub.demo",
-    name: "Jamie Chen (Attendee)",
-    roles: ["ROLE_ATTENDEE"],
-  },
-  STAFF: {
-    username: "taylor_staff",
-    email: "staff@eventhub.demo",
-    name: "Taylor Morgan (Gate Staff)",
-    roles: ["ROLE_STAFF"],
+  demo_attendee: {
+    username: "demo_attendee",
+    sub: "33333333-3333-3333-3333-333333333333",
+    email: "demo_attendee@eventhub.local",
+    name: "Demo Attendee",
+    roles: ["ATTENDEE", "ROLE_ATTENDEE"],
+    defaultDashboard: "/dashboard/tickets",
   },
 };
 
-function createDemoJwt(roles: string[], profile: DemoUserProfile): string {
-  const header = btoa(JSON.stringify({ alg: "none", typ: "JWT" }));
+const ACTIVE_DEMO_TOKEN_KEY = "etp_isolated_demo_jwt";
+
+function buildIsolatedDemoJwt(spec: DemoIdentitySpec): string {
+  const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = btoa(
     JSON.stringify({
-      sub: "demo-user-001",
-      preferred_username: profile.preferred_username,
-      email: profile.email,
-      name: profile.name,
-      realm_access: { roles },
-      exp: Math.floor(Date.now() / 1000) + 86400 * 30,
+      sub: spec.sub,
+      iss:
+        import.meta.env.VITE_OIDC_AUTHORITY ||
+        "http://localhost:9090/realms/event-ticket-platform",
+      preferred_username: spec.username,
+      email: spec.email,
+      name: spec.name,
+      realm_access: {
+        roles: spec.roles,
+      },
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600 * 4,
     }),
   );
   return `${header}.${payload}.demo_signature`;
+}
+
+function isTokenValid(token: string | null): JwtRolePayload | null {
+  if (!token) return null;
+  try {
+    const decoded = jwtDecode<JwtRolePayload>(token);
+    if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+      return null;
+    }
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+async function isKeycloakReachable(): Promise<boolean> {
+  const authority =
+    import.meta.env.VITE_OIDC_AUTHORITY ||
+    "http://localhost:9090/realms/event-ticket-platform";
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1800);
+    const res = await fetch(
+      `${authority.replace(/\/$/, "")}/.well-known/openid-configuration`,
+      { signal: controller.signal },
+    );
+    clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+interface DemoAuthContextValue {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  isAuthenticatingIdentity: DemoIdentityKey | null;
+  authError: string | null;
+  user?: AppUser;
+  activeIdentityUsername?: string;
+  authenticateDemoIdentity: (identityKey: DemoIdentityKey) => Promise<string>;
+  signinRedirect: () => Promise<void>;
+  signoutRedirect: (postLogoutPath?: string) => Promise<void>;
 }
 
 const DemoAuthContext = createContext<DemoAuthContextValue | undefined>(
@@ -88,124 +137,155 @@ export const DemoAuthProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const oidc = useOidcAuth();
 
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem(DEMO_MODE_STORAGE_KEY);
-    if (saved !== null) {
-      return saved === "true";
-    }
-    // Default to true when running on Vercel or non-localhost, or whenVITE_DEMO_MODE is not explicitly false
-    const envDemo = import.meta.env.VITE_DEMO_MODE;
-    if (envDemo === "false") return false;
-    return true;
-  });
-
-  const [demoPreset, setDemoPresetState] = useState<DemoRolePreset>(() => {
-    const saved = localStorage.getItem(DEMO_PRESET_STORAGE_KEY) as DemoRolePreset;
-    if (saved && saved in PRESET_PROFILES) {
-      return saved;
-    }
-    return "ALL";
-  });
-
+  // Clean up legacy all-roles keys if present
   useEffect(() => {
-    localStorage.setItem(DEMO_MODE_STORAGE_KEY, String(isDemoMode));
-  }, [isDemoMode]);
+    localStorage.removeItem("etp_demo_mode_enabled");
+    localStorage.removeItem("etp_demo_role_preset");
+  }, []);
 
-  const setDemoPreset = (preset: DemoRolePreset) => {
-    setDemoPresetState(preset);
-    localStorage.setItem(DEMO_PRESET_STORAGE_KEY, preset);
-    if (!isDemoMode) {
-      setIsDemoMode(true);
-    }
-  };
+  const [fallbackToken, setFallbackToken] = useState<string | null>(() => {
+    const stored = sessionStorage.getItem(ACTIVE_DEMO_TOKEN_KEY);
+    return isTokenValid(stored) ? stored : null;
+  });
+  const [isAuthenticatingIdentity, setIsAuthenticatingIdentity] =
+    useState<DemoIdentityKey | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const enableDemoMode = (preset?: DemoRolePreset) => {
-    if (preset) {
-      setDemoPresetState(preset);
-      localStorage.setItem(DEMO_PRESET_STORAGE_KEY, preset);
-    }
-    setIsDemoMode(true);
-  };
+  const validFallbackPayload = isTokenValid(fallbackToken);
 
-  const disableDemoMode = () => {
-    setIsDemoMode(false);
-  };
+  const effectiveAuthenticated =
+    oidc.isAuthenticated || Boolean(validFallbackPayload);
+  const effectiveLoading = oidc.isLoading;
 
-  const activePreset = PRESET_PROFILES[demoPreset];
-  const demoProfile: DemoUserProfile = {
-    preferred_username: activePreset.username,
-    email: activePreset.email,
-    name: activePreset.name,
-  };
-  const demoToken = createDemoJwt(activePreset.roles, demoProfile);
-
-  const effectiveAuthenticated = isDemoMode ? true : oidc.isAuthenticated;
-  const effectiveLoading = isDemoMode ? false : oidc.isLoading;
-
-  const effectiveUser: AppUser | undefined = isDemoMode
+  const effectiveUser: AppUser | undefined = oidc.isAuthenticated && oidc.user
     ? {
-        access_token: demoToken,
-        profile: demoProfile,
+        access_token: oidc.user.access_token,
+        profile: {
+          preferred_username:
+            oidc.user.profile?.preferred_username || "authenticated_user",
+          email: oidc.user.profile?.email || "",
+          name:
+            oidc.user.profile?.name ||
+            oidc.user.profile?.preferred_username ||
+            "Authenticated User",
+        },
       }
-    : oidc.user
+    : validFallbackPayload && fallbackToken
       ? {
-          access_token: oidc.user.access_token,
+          access_token: fallbackToken,
           profile: {
             preferred_username:
-              oidc.user.profile?.preferred_username || "user",
-            email: oidc.user.profile?.email || "",
-            name: oidc.user.profile?.name || "Authenticated User",
+              validFallbackPayload.preferred_username || "demo_user",
+            email: validFallbackPayload.email || "",
+            name: validFallbackPayload.name || "Demo User",
           },
         }
       : undefined;
 
-  const signinRedirect = async () => {
-    const hasCustomOidc = Boolean(import.meta.env.VITE_OIDC_AUTHORITY);
-    if (!hasCustomOidc && window.location.hostname !== "localhost") {
-      // On Vercel without an external Keycloak server, enable Demo Mode directly
-      enableDemoMode("ALL");
-      return;
-    }
+  /**
+   * Authenticates one of the three strictly separated demo identities:
+   * - demo_admin (ADMIN)
+   * - demo_organizer (ORGANIZER)
+   * - demo_attendee (ATTENDEE)
+   *
+   * Enforces safe identity-switching:
+   * 1. If the currently authenticated identity already matches, returns target dashboard.
+   * 2. If another identity is currently logged in, terminates the active session first.
+   * 3. Initiates Keycloak authentication with prompt="login" and login_hint=<username>
+   *    so Keycloak never reuses an existing SSO session for a different role.
+   */
+  const authenticateDemoIdentity = async (
+    identityKey: DemoIdentityKey,
+  ): Promise<string> => {
+    setAuthError(null);
+    setIsAuthenticatingIdentity(identityKey);
+
     try {
-      await oidc.signinRedirect();
-    } catch {
-      enableDemoMode("ALL");
+      const targetSpec = DEMO_IDENTITIES[identityKey];
+      const currentUsername = effectiveUser?.profile?.preferred_username;
+
+      // 1. If already authenticated as the requested demo identity, return its dashboard
+      if (effectiveAuthenticated && currentUsername === targetSpec.username) {
+        return targetSpec.defaultDashboard;
+      }
+
+      // 2. If authenticated as a DIFFERENT identity, terminate the current session first
+      if (oidc.isAuthenticated) {
+        sessionStorage.removeItem(ACTIVE_DEMO_TOKEN_KEY);
+        setFallbackToken(null);
+        localStorage.setItem("redirectPath", targetSpec.defaultDashboard);
+        await oidc.removeUser();
+      } else if (fallbackToken) {
+        sessionStorage.removeItem(ACTIVE_DEMO_TOKEN_KEY);
+        setFallbackToken(null);
+      }
+
+      // 3. Check if Keycloak OIDC authority is reachable
+      const keycloakAvailable = await isKeycloakReachable();
+      if (keycloakAvailable) {
+        localStorage.setItem("redirectPath", targetSpec.defaultDashboard);
+        await oidc.signinRedirect({
+          prompt: "login",
+          login_hint: targetSpec.username,
+        });
+        return targetSpec.defaultDashboard;
+      }
+
+      // 4. Standalone cloud deployment fallback: issue single-role JWT for the selected identity only
+      const isolatedToken = buildIsolatedDemoJwt(targetSpec);
+      sessionStorage.setItem(ACTIVE_DEMO_TOKEN_KEY, isolatedToken);
+      setFallbackToken(isolatedToken);
+      return targetSpec.defaultDashboard;
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to initiate authentication for the selected demo role.";
+      setAuthError(message);
+      throw err;
+    } finally {
+      setIsAuthenticatingIdentity(null);
     }
   };
 
-  const signoutRedirect = async () => {
-    if (isDemoMode) {
-      setIsDemoMode(false);
+  const signinRedirect = async () => {
+    setAuthError(null);
+    const keycloakAvailable = await isKeycloakReachable();
+    if (keycloakAvailable) {
+      await oidc.signinRedirect();
       return;
     }
-    try {
-      await oidc.signoutRedirect();
-    } catch {
-      setIsDemoMode(false);
+    // If Keycloak is not reachable in standalone cloud mode, direct user to the Demo Role Selection page
+    window.location.href = "/demo";
+  };
+
+  const signoutRedirect = async (postLogoutPath = "/demo") => {
+    sessionStorage.removeItem(ACTIVE_DEMO_TOKEN_KEY);
+    setFallbackToken(null);
+
+    if (oidc.isAuthenticated) {
+      try {
+        await oidc.signoutRedirect({
+          post_logout_redirect_uri: `${window.location.origin}${postLogoutPath}`,
+        });
+        return;
+      } catch {
+        await oidc.removeUser();
+      }
     }
+    window.location.href = postLogoutPath;
   };
 
   return (
     <DemoAuthContext.Provider
       value={{
-        isDemoMode,
-        demoPreset,
-        setDemoPreset,
-        enableDemoMode,
-        disableDemoMode,
         isAuthenticated: effectiveAuthenticated,
         isLoading: effectiveLoading,
+        isAuthenticatingIdentity,
+        authError,
         user: effectiveUser,
-        roles: isDemoMode ? activePreset.roles : [],
-        isOrganizer: isDemoMode
-          ? activePreset.roles.includes("ROLE_ORGANIZER")
-          : false,
-        isAttendee: isDemoMode
-          ? activePreset.roles.includes("ROLE_ATTENDEE")
-          : false,
-        isStaff: isDemoMode
-          ? activePreset.roles.includes("ROLE_STAFF")
-          : false,
+        activeIdentityUsername: effectiveUser?.profile?.preferred_username,
+        authenticateDemoIdentity,
         signinRedirect,
         signoutRedirect,
       }}

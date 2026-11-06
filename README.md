@@ -1,80 +1,55 @@
 # Event Ticket Platform
 
-Event Ticket Platform is a full-stack application for publishing events, selling multi-tier tickets, and validating venue entry with QR codes.
+Event Ticket Platform is a full-stack application for publishing events, selling multi-tier tickets, and validating venue entry with QR codes, secured by Keycloak OAuth2/OIDC and Spring Security Role-Based Access Control (RBAC).
 
-## Key Features
+## Role-Based Access Control (RBAC) & Recruiter Demo Identities
 
-- **Interactive Recruiter Demo Mode & One-Click Role Switcher**: Instantly switch between **All Roles (Recruiter)**, **Attendee**, **Organizer**, and **Gate Staff (QR)** directly from the top bar—works standalone on Vercel without requiring an external Keycloak or Spring Boot server, while seamlessly connecting to them when configured via environment variables.
-- **Attendees**: Browse and search published events with quick category filters, save favorites, purchase tickets through a streamlined checkout, and retrieve scannable SVG QR passes.
-- **Organizers**: View real-time KPI analytics (total events, tickets sold, gross revenue, remaining capacity) and create, update, publish, and manage events and ticket tiers.
-- **Venue Staff**: Scan and validate ticket QR codes at the gate via camera or test-validate existing/invalid tickets with one click.
-- **Hybrid Architecture**: Supports Keycloak OAuth2/OIDC + Spring Boot 3.4 REST API in full-stack mode and automatic persistent client-side fallback for zero-setup cloud demos on Vercel.
+Instead of a single super-user account with all roles combined, the platform enforces strict role separation across three independent identities:
+
+| Demo Account | Assigned Role | Permitted Operations |
+| --- | --- | --- |
+| `demo_admin` | `ADMIN` (`ROLE_ADMIN`) | Platform-wide governance, user directory (`/api/v1/admin/users`), platform metrics (`/api/v1/admin/overview`), event oversight, and demo dataset reset. |
+| `demo_organizer` | `ORGANIZER` (`ROLE_ORGANIZER`) | Create, update, publish, and manage events (`/api/v1/events/**`), and scan/validate attendee QR tickets (`/api/v1/ticket-validations`). Restricted from Admin endpoints (`HTTP 403`). |
+| `demo_attendee` | `ATTENDEE` (`ROLE_ATTENDEE`) | Browse published events, purchase tickets, and retrieve personal QR tickets (`/api/v1/tickets/**`). Restricted from Organizer and Admin endpoints (`HTTP 403`). |
+
+Visit **`/demo`** (**"Explore the Event Ticket Platform"**) to select and authenticate any of the three independent identities. Switching roles automatically terminates the previous session before authenticating the selected identity.
 
 ## Technology Stack
 
 | Layer | Technologies |
 | --- | --- |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Lucide Icons |
-| Backend | Java 21, Spring Boot 3.4.4, Spring Security, Spring Data JPA, ZXing QR |
-| Database | PostgreSQL |
-| Identity | Keycloak (OAuth2/OIDC, JWT) + Interactive Demo JWT Provider |
-| Deployment | Vercel (SPA rewrites + hybrid serverless/demo store), Docker Compose |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, `react-oidc-context` |
+| Backend | Java 21, Spring Boot 3.4.4, Spring Security OAuth2 Resource Server, Spring Data JPA, ZXing QR |
+| Database | PostgreSQL (Production/Dev), H2 (Automated Integration Tests) |
+| Identity | Keycloak (OAuth2/OIDC, JWT `realm_access.roles`) |
 
-## Repository Layout
+## Run Locally
 
-```text
-event-ticket-platform/
-├── backend/        Spring Boot REST API and persistence layer
-├── frontend/       React 19 application, Demo Store, and Vite configuration
-└── vercel.json     Root Vercel build & SPA rewrite configuration
-```
-
-## Deploy to Vercel
-
-You can deploy this repository directly to Vercel in two ways:
-
-### Option A: Deploy via Vercel CLI
-From the `frontend` directory (or repository root):
-```bash
-cd frontend
-npx vercel --prod
-```
-
-### Option B: Connect GitHub Repository to Vercel
-1. Import the repository in the Vercel Dashboard.
-2. Set the **Root Directory** to `event-ticket-platform/frontend` (or `event-ticket-platform`, which uses the root `vercel.json`).
-3. Click **Deploy**. Both [`frontend/.npmrc`](frontend/.npmrc) (`legacy-peer-deps=true`) and [`frontend/vercel.json`](frontend/vercel.json) (SPA route rewrites) are pre-configured.
-4. *(Optional)* To connect to a hosted Spring Boot backend and Keycloak server, set `VITE_DEMO_MODE=false`, `VITE_API_BASE_URL`, `VITE_OIDC_AUTHORITY`, `VITE_OIDC_CLIENT_ID`, and `VITE_OIDC_REDIRECT_URI` in Vercel Project Environment Variables (see [`frontend/.env.example`](frontend/.env.example)).
-
-## Run Locally (Full-Stack Mode)
-
-### 1. Start supporting services
-
-Open a terminal in `backend`:
+### 1. Start PostgreSQL, Keycloak (with Realm Auto-Import), and Adminer
 
 ```bash
 cd backend
 docker compose up -d
 ```
 
-This starts:
+`docker-compose.yml` mounts [`backend/keycloak/event-ticket-platform-realm.json`](backend/keycloak/event-ticket-platform-realm.json) and runs Keycloak with `--import-realm`, automatically provisioning:
+- Realm: `event-ticket-platform`
+- Public OIDC Client: `event-ticket-platform-app`
+- Users: `demo_admin` (`ADMIN`), `demo_organizer` (`ORGANIZER`), `demo_attendee` (`ATTENDEE`)
 
-| Service | Address |
-| --- | --- |
-| PostgreSQL | `localhost:5432` |
-| Keycloak | `http://localhost:9090` |
-| Adminer | `http://localhost:8888` |
+To set or rotate passwords for the demo users in Keycloak Admin Console (`http://localhost:9090`, login `admin` / `admin`):
+1. Select the **`event-ticket-platform`** realm.
+2. Go to **Users** → select `demo_admin`, `demo_organizer`, or `demo_attendee`.
+3. Open the **Credentials** tab → click **Set password**, set **Temporary** to **Off**, and save.
 
-### 2. Start the backend
+### 2. Start the Spring Boot Backend
 
 ```bash
 cd backend
 .\mvnw.cmd spring-boot:run
 ```
 
-The API is available at `http://localhost:8080`.
-
-### 3. Start the frontend
+### 3. Start the React Frontend
 
 ```bash
 cd frontend
@@ -82,4 +57,4 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open `http://localhost:5173/demo` to test the three independent roles.
